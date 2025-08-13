@@ -1,5 +1,6 @@
 // Import required modules
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, MessageFlags, ChannelType } = require('discord.js');
+const { Channel } = require('diagnostics_channel');
+const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, MessageFlags, ChannelType, PermissionFlagsBits } = require('discord.js');
 
 const fs = require('fs');
 const path = require('path');
@@ -33,6 +34,7 @@ const commands = [
     new SlashCommandBuilder()
         .setName('set')
 	    .setDescription('Set various bot settings')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 	    .addSubcommand(subcommand =>
 		    subcommand
 			    .setName('ping_channel')
@@ -60,10 +62,11 @@ const commands = [
     new SlashCommandBuilder()
         .setName('enmity')
         .setDescription('Use this command to trigger an enmity ping in the set channel.')
-        .addChannelOption(option =>
-            option.setName('voicechannel')
-                .setDescription('Optional voice channel to mention')
-                .setRequired(true))
+        .addChannelOption(option =>option
+            .setName('voicechannel')
+            .setDescription('Optional voice channel to mention')
+            .addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice)
+            .setRequired(true))
         .addStringOption(option =>
             option.setName('message')
                 .setDescription('Optional message to include with the ping')
@@ -71,12 +74,13 @@ const commands = [
     new SlashCommandBuilder()
         .setName('print_settings')
         .setDescription('Print saved settings for this server.')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .addStringOption(option =>
             option.setName('key')
                 .setDescription('Optional key to get a specific setting')
                 .setRequired(false)
-                // Tooltips for keys currently set in this guild will be updated on interaction
-        )
+                .setAutocomplete(true))
+
 ].map(command => command.toJSON());
 
 // Register slash commands on bot startup
@@ -117,8 +121,10 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: 'This command can only be used in a server.', flags: MessageFlags.Ephemeral });
     }
 
+    const guildSettings = settings[guildId] || {};
+    
     // ----- SET COMMAND -----
-    if (interaction.commandName === 'set' && interaction.memberPermissions.has('Administrator')) {
+    if (interaction.commandName === 'set') {
     
         const subcommand = interaction.options.getSubcommand();
 
@@ -170,16 +176,24 @@ client.on('interactionCreate', async interaction => {
 
     // ----- ENMITY COMMAND -----
     if (interaction.commandName === 'enmity') {
-        const message = interaction.options.getString('message') || '';
-        const voiceChannel = interaction.options.getChannel('voicechannel'); // use exact option name
-        const guildSettings = settings[guildId] || {};
-
+        
         const member = await interaction.guild.members.fetch(interaction.user.id);
+
+        if (!guildSettings.enmityHostRoleId) {
+            return interaction.reply({  content: '❌ The enmity host role has not been set.', flags: MessageFlags.Ephemeral });
+        }
 
         if (!member.roles.cache.has(guildSettings.enmityHostRoleId)) {
             return interaction.reply({ content: '❌ You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
         }
 
+        const message = interaction.options.getString('message') || '';
+        const voiceChannel = interaction.options.getChannel('voicechannel'); // use exact option name
+
+        if (!member.roles.cache.has(guildSettings.enmityHostRoleId)) {
+            return interaction.reply({ content: '❌ You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
+        }
+        
         if (!guildSettings.channelId || !guildSettings.roleToPingId) {
             return interaction.reply({ content: 'Please set both the ping channel and role first.', flags: MessageFlags.Ephemeral });
         }
@@ -191,29 +205,24 @@ client.on('interactionCreate', async interaction => {
             return interaction.reply({ content: 'The specified ping channel is not valid.', flags: MessageFlags.Ephemeral });
         }
 
-        // Get voice channel option (optional)
+        try {
+            let content = `${roleToPing} ${interaction.user} is hosting an enmity.`;
 
-
-    try {
-        let content = `${roleToPing} ${interaction.user} is hosting an enmity.`;
-
-        if (message && voiceChannel) {
-            content += ` They're saying: ${message}. Get on this VC whenever you're ready! <#${voiceChannel.id}>`;
-        } else if (message) {
-            content += ` They're saying: ${message}.`;
-        } else if (voiceChannel) {
-            content += ` Get on this VC whenever you're ready! <#${voiceChannel.id}>`;
-        }
+            if (message && voiceChannel) {
+                content += ` They're saying: ${message}. Get on this VC whenever you're ready! <#${voiceChannel.id}>`;
+            } else if (message) {
+                content += ` They're saying: ${message}.`;
+            } else if (voiceChannel) {
+                content += ` Get on this VC whenever you're ready! <#${voiceChannel.id}>`;
+            }
 
         await channel.send(content);
         await interaction.reply({ content: '✅ Enmity ping sent!', flags: MessageFlags.Ephemeral });
-    } catch (error) {
+    }
+    catch (error) {
         console.error(error);
         await interaction.reply({ content: '❌ Failed to send the enmity ping.', flags: MessageFlags.Ephemeral });
     }
-
-
-}
 
     // ----- PRINT SETTINGS COMMAND -----
     if (interaction.commandName === 'print_settings') {
@@ -237,13 +246,13 @@ client.on('interactionCreate', async interaction => {
         }
         return interaction.reply({ content: response, flags: MessageFlags.Ephemeral });
     }
+    }
 });
 
 
 // Message-based "hello" response
 client.on('messageCreate', message => {
     if (message.author.bot) return;
-
     if (message.content.toLowerCase() === 'hello') {
         message.reply('Hi there! 👋 I am your friendly bot.');
     }
