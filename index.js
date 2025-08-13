@@ -79,7 +79,7 @@ const commands = [
             option.setName('key')
                 .setDescription('Optional key to get a specific setting')
                 .setRequired(false)
-                .setAutocomplete(true))
+                /*.setAutocomplete(true)*/)
 
 ].map(command => command.toJSON());
 
@@ -223,8 +223,9 @@ client.on('interactionCreate', async interaction => {
         console.error(error);
         await interaction.reply({ content: '❌ Failed to send the enmity ping.', flags: MessageFlags.Ephemeral });
     }
+    }
 
-    // ----- PRINT SETTINGS COMMAND -----
+     // ----- PRINT SETTINGS COMMAND -----
     if (interaction.commandName === 'print_settings') {
         const key = interaction.options.getString('key');
 
@@ -245,7 +246,6 @@ client.on('interactionCreate', async interaction => {
             response += `**${k}**: \`${v}\`\n`;
         }
         return interaction.reply({ content: response, flags: MessageFlags.Ephemeral });
-    }
     }
 });
 
