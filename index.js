@@ -1,8 +1,9 @@
 // Import required modules
 const { Channel } = require('diagnostics_channel');
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, MessageFlags, ChannelType, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, MessageFlags, ChannelType, PermissionFlagsBits, SharedSlashCommand } = require('discord.js');
 
 const fs = require('fs');
+const { Server } = require('http');
 const path = require('path');
 require('dotenv').config();
 
@@ -58,6 +59,15 @@ const commands = [
                 .addRoleOption(option => 
                     option.setName('role')
                         .setDescription('The role that can use the /enmity command')
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('request_enmity_channel')
+                .setDescription('Set the channel where enmity requests are sent.')
+                .addChannelOption(option => 
+                    option.setName('channel')
+                        .setDescription('The channel to set for enmity requests')
+                        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.PublicThread, ChannelType.PrivateThread, ChannelType.AnnouncementThread)
                         .setRequired(true))),
     new SlashCommandBuilder()
         .setName('enmity')
@@ -79,8 +89,14 @@ const commands = [
             option.setName('key')
                 .setDescription('Optional key to get a specific setting')
                 .setRequired(false)
-                /*.setAutocomplete(true)*/)
-
+                /*.setAutocomplete(true)*/),
+    new SlashCommandBuilder()
+        .setName('request_enmity')
+        .setDescription('Request an enmity from an Enmity Host.')
+        .addStringOption(option =>
+            option.setName('additional_message')
+            .setDescription('Optional additional message to include with the request')
+            .setRequired(false))
 ].map(command => command.toJSON());
 
 // Register slash commands on bot startup
@@ -172,6 +188,21 @@ client.on('interactionCreate', async interaction => {
 
             return interaction.reply({ content: `✅ Enmity host role set to **${role.name}** in this server.`, flags: MessageFlags.Ephemeral });
         }
+
+        if (subcommand == 'request_enmity_channel') {
+            const channel = interaction.options.getChannel('channel');
+            if (!channel) {
+                return interaction.reply({ content: 'Please provide a valid channel.', flags: MessageFlags.Ephemeral });
+            }
+
+            settings[guildId] = {
+                ...settings[guildId],
+                requestEnmityChannelId: channel.id,
+            };
+            saveSettings();
+
+            return interaction.reply({ content: `✅ Enmity request channel set to **${channel.name}** in this server.`, flags: MessageFlags.Ephemeral });
+        }
     }
 
     // ----- ENMITY COMMAND -----
@@ -247,14 +278,32 @@ client.on('interactionCreate', async interaction => {
         }
         return interaction.reply({ content: response, flags: MessageFlags.Ephemeral });
     }
-});
 
+    // ----- REQUEST ENMITY COMMAND -----
 
-// Message-based "hello" response
-client.on('messageCreate', message => {
-    if (message.author.bot) return;
-    if (message.content.toLowerCase() === 'hello') {
-        message.reply('Hi there! 👋 I am your friendly bot.');
+    if (interaction.commandName === 'request_enmity') {
+        const additionalMessage = interaction.options.getString('additional_message') || '';
+        const enmityHostRoleId = guildSettings.enmityHostRoleId;
+        const requestChannelId = guildSettings.requestEnmityChannelId;
+        
+        const channel = client.channels.cache.get(requestChannelId);
+        const roleToPing = `<@&${enmityHostRoleId}>`;
+
+        if (!enmityHostRoleId) {
+            return interaction.reply({ content: '❌ The enmity host role has not been set.', flags: MessageFlags.Ephemeral });
+        }
+        if (!requestChannelId) {
+            return interaction.reply({ content: '❌ The enmity request channel has not been set.', flags: MessageFlags.Ephemeral });
+        }
+
+        try {
+            await interaction.reply({ content: '✅ Your enmity request has been sent!', flags: MessageFlags.Ephemeral });
+            await channel.send({content: `${roleToPing}**${interaction.user}** has requested an enmity! ${additionalMessage}`, allowedMentions: { roles: [enmityHostRoleId] } });
+        }
+        catch (error) {
+            console.error(error);
+            await interaction.followUp({ content: '❌ Failed to send the enmity request.', flags: MessageFlags.Ephemeral });
+        }
     }
 });
 
