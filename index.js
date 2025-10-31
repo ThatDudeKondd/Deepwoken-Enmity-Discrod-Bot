@@ -237,7 +237,7 @@ client.on('interactionCreate', async interaction => {
         }
 
         try {
-            let content = `${roleToPing} ${interaction.user} is hosting an enmity.`;
+            let content = `${roleToPing} ${interaction.user} is hosting an enmity. React with ✅ if you're going to join.`;
 
             if (message && voiceChannel) {
                 content += ` They're saying: ${message}. Get on this VC whenever you're ready! <#${voiceChannel.id}>`;
